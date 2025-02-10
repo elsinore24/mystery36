@@ -1,74 +1,86 @@
-
 <script>
-  import { uploadMapImage, getMapImageUrl } from '$lib/storage';
+  import { uploadImage, getImageUrl, listSuspectImages, deleteImage } from '$lib/storage';
+  import { suspects } from '$lib/data/suspects';
   
   let selectedFile;
+  let selectedSuspect = suspects[0];
   let uploadStatus = '';
-  let currentMapUrl = '';
-  let uploadProgress = 0;
-
-  async function loadCurrentImage() {
-    try {
-      currentMapUrl = await getMapImageUrl();
-    } catch (error) {
-      console.error('Error loading image:', error);
-      uploadStatus = `Error loading image: ${error.message}`;
-    }
-  }
-
-  loadCurrentImage();
+  let imageList = [];
+  let uploadedImageUrl = '';
 
   async function handleFileSelect(event) {
     selectedFile = event.target.files[0];
-    if (selectedFile && selectedFile.size > 5 * 1024 * 1024) {
-      uploadStatus = 'Error: File size must be under 5MB';
-      selectedFile = null;
-      return;
-    }
-    uploadStatus = '';
-    uploadProgress = 0;
   }
 
   async function handleUpload() {
-    if (!selectedFile) return;
-    
     try {
       uploadStatus = 'Uploading...';
-      uploadProgress = 10;
+      const fileExt = selectedFile.name.split('.').pop().toLowerCase();
+      const fileName = `profile.${fileExt}`; // Always use profile.jpg or profile.jpeg
       
-      console.log('Starting upload with file:', {
-        name: selectedFile.name,
-        size: selectedFile.size,
-        type: selectedFile.type
-      });
-
-      const result = await uploadMapImage(selectedFile);
-      console.log('Upload result:', result);
+      // Delete existing profile images first
+      const existingImages = await listSuspectImages(selectedSuspect.id);
+      for (const file of existingImages) {
+        if (file.name.startsWith('profile.')) {
+          await deleteImage(`${selectedSuspect.id}/${file.name}`);
+        }
+      }
       
+      await uploadImage(selectedFile, selectedSuspect.id, fileName);
       uploadStatus = 'Upload successful!';
-      uploadProgress = 100;
       
-      // Reload the image
-      currentMapUrl = await getMapImageUrl() + '?t=' + Date.now();
+      // Get the URL of the uploaded image
+      const path = `${selectedSuspect.id}/${fileName}`;
+      uploadedImageUrl = await getImageUrl(path);
       
-      // Reset file input
-      selectedFile = null;
-      
+      // Refresh the image list
+      await loadImages();
     } catch (error) {
-      console.error('Upload error:', error);
       uploadStatus = `Upload failed: ${error.message}`;
-      uploadProgress = 0;
+      console.error('Upload error:', error);
     }
+  }
+
+  async function loadImages() {
+    try {
+      imageList = await listSuspectImages(selectedSuspect.id);
+    } catch (error) {
+      console.error('Failed to load images:', error);
+    }
+  }
+
+  async function handleDelete(fileName) {
+    try {
+      const path = `${selectedSuspect.id}/${fileName}`;
+      await deleteImage(path);
+      await loadImages();
+    } catch (error) {
+      console.error('Delete failed:', error);
+    }
+  }
+
+  $: if (selectedSuspect) {
+    loadImages();
   }
 </script>
 
-<div class="p-4 border rounded-lg bg-gray-800">
-  <h2 class="text-xl font-bold mb-4">Mansion Map Upload</h2>
+<div class="p-4">
+  <h2 class="text-xl font-bold mb-4">Image Upload Test</h2>
   
+  <div class="mb-4">
+    <select 
+      bind:value={selectedSuspect}
+      class="border p-2 rounded">
+      {#each suspects as suspect}
+        <option value={suspect}>{suspect.name}</option>
+      {/each}
+    </select>
+  </div>
+
   <div class="mb-4">
     <input 
       type="file" 
-      accept="image/jpeg,image/png"
+      accept="image/jpeg"
       on:change={handleFileSelect}
       class="mb-2">
     
@@ -76,7 +88,7 @@
       on:click={handleUpload}
       disabled={!selectedFile}
       class="bg-blue-500 text-white px-4 py-2 rounded disabled:opacity-50">
-      Upload Map Image
+      Upload
     </button>
   </div>
 
@@ -84,29 +96,26 @@
     <p class="mb-4">{uploadStatus}</p>
   {/if}
 
-  {#if uploadProgress > 0}
-    <div class="w-full bg-gray-700 rounded-full h-2.5 mb-4">
-      <div 
-        class="bg-blue-500 h-2.5 rounded-full transition-all duration-300" 
-        style="width: {uploadProgress}%">
-      </div>
+  {#if uploadedImageUrl}
+    <div class="mb-4">
+      <h3 class="font-bold">Last Uploaded Image:</h3>
+      <img src={uploadedImageUrl} alt="Uploaded" class="max-w-xs mt-2">
     </div>
   {/if}
 
-  <div class="mt-4">
-    <h3 class="font-bold mb-2">Current Map Image:</h3>
-    {#if currentMapUrl}
-      <img 
-        src={currentMapUrl} 
-        alt="Mansion Map" 
-        class="max-w-xl rounded-lg shadow-lg"
-        on:error={(e) => {
-          console.error('Image load error:', e);
-          currentMapUrl = '';
-        }} 
-      />
-    {/if}
+  <div>
+    <h3 class="font-bold mb-2">Existing Images:</h3>
+    <div class="grid grid-cols-3 gap-4">
+      {#each imageList as file}
+        <div class="border p-2">
+          <p class="text-sm mb-2">{file.name}</p>
+          <button
+            on:click={() => handleDelete(file.name)}
+            class="bg-red-500 text-white px-2 py-1 rounded text-sm">
+            Delete
+          </button>
+        </div>
+      {/each}
+    </div>
   </div>
 </div>
-</boltArtifact>
-```
